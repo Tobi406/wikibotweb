@@ -1,8 +1,7 @@
 <template>
-  <div class="home">
-    <img alt="Vue logo" src="../assets/logo.png">
-    <HelloWorld msg="Welcome to Your Vue.js App"/>
-  </div>
+  <main class="home">
+    <div v-html="readme" />
+  </main>
 </template>
 
 <script>
@@ -11,8 +10,19 @@ import HelloWorld from '@/components/HelloWorld.vue'
 
 export default {
   name: 'Home',
-  components: {
-    HelloWorld
+  data() {
+    return {
+      readme: '',
+    }
+  },
+  mounted() {
+    const md = require('markdown-it')();
+    const axios = require('axios');
+    axios.get('https://raw.githubusercontent.com/Markus-Rost/discord-wiki-bot/master/README.md')
+      .then(response => {
+        this.readme = md.render(response.data);
+      })
+      .catch(error => console.error(error));
   }
 }
 </script>

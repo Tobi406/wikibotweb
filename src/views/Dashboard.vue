@@ -20,7 +20,7 @@
         <div v-if="currentServer">
           <h1>Change settings for {{ currentServer.information.name }}</h1>
           <p class="bold">Changes? {{ JSON.stringify(currentServer) !== JSON.stringify(currentOriginalServer) }}</p>
-          <pre style="text-align: left;" v-text="JSON.stringify(groups, null, 2)" />
+          <pre style="text-align: left;" v-text="JSON.stringify(addValues, null, 2)" />
           <table>
             <tr>
              <td>
@@ -101,15 +101,20 @@
                         <p>Usergroup:</p> <!-- Add s -->
                       </td>
                       <td>
+                        {{ verification.usergroup.startsWith('AND') }}
                         <label for="andRadio">And</label>
-                        <input type="radio" id="andRadio" :value="true">
+
+                        <input type="radio" id="andRadio" @change="changeAddValues($event, verification.guild, index)" :checked="changeAddValues[verification.guild][index]">
                         <label for="orRadio">Or</label>
-                        <input type="radio" id="orRadio" :value="false">
+                        <input type="radio" id="orRadio" @change="changeAddValues($event, verification.guild, index)" :checked="!changeAddValues[verification.guild][index]">
                         <br />
-                        <button @click="verification.usergroup += '|'">Add new</button>
-                        <template v-for="(group, index2) in verification.usergroup.replace('AND|', '').split('|')">
-                          <input :value="group" :key="index2" @change="changeGroup($event, verification.guild, index, index2)" />
-                        </template>
+                        <input :id="`${index}-new`">
+                        <button @click="addGroup(verification.guild, index)">Add group</button>
+                        <div :key="index2" v-for="(group, index2) in verification.usergroup.replace('AND|', '').split('|')">
+                          <br />
+                          <input :value="group" :id="`${index}-${index2}`" @change="changeGroup($event, verification.guild, index, index2)" />
+                          <label :for="`${index}-${index2}`" @click="removeGroup(verification.guild, index, index2)">&nbsp;&nbsp;X</label>
+                        </div>
                       </td>
                     </tr>
                     <tr>
@@ -125,7 +130,7 @@
                         Rename:
                       </td>
                       <td>
-                        <input @change="saveRename($event, index)" :value="verification.rename" type="checkbox" />
+                        <input @change="saveRename($event, index)" v-model="verification.rename" type="checkbox" />
                       </td>
                     </tr>
                   </table>
@@ -157,7 +162,7 @@ export default {
   data() {
     return {
       error: false,
-      andValue: {},
+      addValues: {},
       groups: {},
     }
   },
@@ -180,7 +185,7 @@ export default {
       });
     },
     roles() {
-      return this.currentServer.roles.sort((a, b) => {
+      return JSON.parse(JSON.stringify(this.currentServer.roles)).sort((a, b) => {
         return a.rawPosition - b.rawPosition;
       }).reverse();
     },
@@ -194,10 +199,12 @@ export default {
       }
     },
     save() {
-      console.log('Save it or something');
+      console.log(JSON.stringify(this.currentServer, null, 2));
+      console.log(JSON.stringify(this.currentOriginalServer, null, 2));
     },
     discardChanges(id) {
       this.$store.dispatch('resetCurrentServer', this.currentServer.information.id);
+      this.setupGroups();
     },
     removeVerification(index) {
       this.currentServer.verifications.splice(index, 1);
@@ -209,17 +216,55 @@ export default {
       this.currentServer.verifications[index].role = Array.apply(null, event.target.selectedOptions).map(o => o.value).join('|');
     },
     saveRename(event, index) {
-      console.log(event);
+      this.currentServer.verifications[index].rename = event.target.checked ? 1 : 0;
     },
     changeGroup(event, guild, index, index2) {
-      //this.groups[guild][index][index2] = event.target.value;
+      index += 1;
       if (!this.groups[guild]) this.groups[guild] = {};
-      if (!this.groups[guild][index]) this.groups[guild][index] = {};
-      this.groups[guild][index][index2] = event.target.value;
-      console.log(this.groups);
+      if (!this.groups[guild][index]) this.groups[guild][index] = [];
+      if (event.target.value !== '') this.groups[guild][index][index2] = event.target.value;
+      else this.removeGroup(guild, index-1, index2);
+      this.setGroups(guild, index);
+    },
+    changeAddValues(event, guild, index) {
+      //this.addValues[guild][index] = !this.addValues[guild][index];
+      console.log(this.addValues[guild][index]);
+      this.setGroups(guild, index + 1);
+    },
+    removeGroup(guild, index, index2) {
+      index += 1;
+      this.groups[guild][index].splice(index2, 1);
+      this.setGroups(guild, index);
+    },
+    addGroup(guild, index) {
+      index += 1;
+      const value = document.getElementById(`${index-1}-new`).value;
+      if (value === '') return;
+      this.groups[guild][index].push(value);
+      this.setGroups(guild, index);
+    },
+    setGroups(guild, index) {
+      this.currentServer.verifications[index - 1].usergroup = (this.addValues[guild][index] ? 'AND|' : '' ) + this.groups[guild][index].join('|');
     },
     selectServer(id) {
       this.$store.dispatch('setCurrentServer', id);
+    },
+    setupGroups() {
+      Object.values(this.servers).forEach(s => {
+        s.verifications.forEach(v => {
+          if (!this.groups[s.information.id]) this.groups[s.information.id] = {};
+          if (!this.groups[s.information.id][v.configid]) this.groups[s.information.id][v.configid] = [];
+          this.groups[s.information.id][v.configid] = v.usergroup.replace('AND|', '').split('|')
+        });
+      });
+    },
+    setupAddValues() {
+      Object.values(this.servers).forEach(s => {
+        s.verifications.forEach(v => {
+          if (!this.addValues[s.information.id]) this.addValues[s.information.id] = [];
+          if (!this.addValues[s.information.id][v.configid]) this.addValues[s.information.id][v.configid - 1] = v.usergroup.startsWith('AND');
+        });
+      });
     },
     async getServers() {
       if (this.$store.getters.isAuthorized) {
@@ -232,6 +277,8 @@ export default {
             console.log(response);
             this.$store.dispatch('setServers', response.data.servers);
             this.$store.dispatch('setLangs', response.data.langs);
+            this.setupGroups();
+            this.setupAddValues();
           })
           .catch(error => console.error(error));
       }
